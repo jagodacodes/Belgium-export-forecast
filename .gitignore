@@ -1,0 +1,12 @@
+# Gretl temp files
+*.gretl_session
+*.gretl_error
+*.gnuplot
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Output files (optional — remove if you want to track pngs)
+# outputs/*.png

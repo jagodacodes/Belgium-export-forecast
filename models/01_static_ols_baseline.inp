@@ -1,0 +1,107 @@
+# ==============================================================
+# SCRIPT 1 — Static OLS Baseline Model
+# Belgium Export Forecasting | SGH Warsaw School of Economics
+# ==============================================================
+# PURPOSE:
+#   - Load and inspect the dataset
+#   - Compute descriptive statistics for all variables
+#   - Test for stationarity (ADF) at levels
+#   - Transform variables to first differences
+#   - Confirm stationarity of differenced series
+#   - Estimate baseline static OLS model
+#   - Run White test → detect heteroskedasticity
+#   → This motivates switching to DL model in script 02
+# ==============================================================
+
+# --- 1. Load data ---
+open belgium_quarterly_2000_2024.csv --csv
+
+# --- 2. Descriptive statistics (levels) ---
+# From the project report:
+# Export:      mean=73228.2,  sd=14772.9, skew=0.4265,  kurt=-0.6824
+# Import:      mean=72023.9,  sd=15134.9, skew=0.3525,  kurt=-0.9311
+# Investment:  mean=21587.5,  sd=3126.68, skew=-0.0981, kurt=-0.9274
+# Consumption: mean=~70000,   sd=~7000
+# GDP:         mean=91495.1,  sd=8764.65, skew=-0.0216, kurt=-0.7930
+
+summary export import investment consumption gdp
+
+# --- 3. Normality tests (Jarque-Bera) ---
+# Results from report:
+#   export:      JB=4.575,  p=0.1015  → normal
+#   import:      JB=5.228,  p=0.0732  → normal
+#   investment:  JB=3.444,  p=0.1787  → normal
+#   consumption: JB=5.217,  p=0.0736  → normal
+#   gdp:         JB=2.418,  p=0.2985  → normal
+
+normtest export --jbera
+normtest import --jbera
+normtest investment --jbera
+normtest consumption --jbera
+normtest gdp --jbera
+
+# --- 4. Time series plots ---
+gnuplot export --time-series --with-lines --output=display
+gnuplot import --time-series --with-lines --output=display
+gnuplot gdp --time-series --with-lines --output=display
+gnuplot investment --time-series --with-lines --output=display
+gnuplot consumption --time-series --with-lines --output=display
+
+# --- 5. ADF stationarity tests — LEVELS ---
+# All series show upward trend → use model with constant + trend
+# Results: all p > 0.05 → non-stationary at levels
+#   export:      tau_ct(1)=-2.728, p=0.2251 → I(1)
+#   import:      tau_ct(1)=-2.549, p=0.3045 → I(1)
+#   investment:  tau_ct(1)=-3.293, p=0.0673 → I(1) (borderline)
+#   consumption: tau_ct(1)=-4.110, p=0.0060 → stationary* (exception)
+#   gdp:         tau_ct(1)=-4.260, p=0.0036 → stationary* (exception)
+
+adf 11 export --ct --c --AIC
+adf 11 import --ct --c --AIC
+adf 11 investment --ct --c --AIC
+adf 11 consumption --ct --c --AIC
+adf 11 gdp --ct --c --AIC
+
+# --- 6. Generate first differences ---
+# Applied to all variables for consistency (even stationary ones)
+series d_export      = diff(export)
+series d_import      = diff(import)
+series d_investment  = diff(investment)
+series d_consumption = diff(consumption)
+series d_gdp         = diff(gdp)
+
+# --- 7. ADF on first differences — confirm stationarity ---
+# All differenced series: p << 0.05 → stationary (I(0))
+#   d_export:      tau_ct(1)=-8.485, p=4.36e-14 ✓
+#   d_import:      tau_ct(1)=-5.769, p=4.12e-06 ✓
+#   d_investment:  tau_ct(1)=-11.45, p=6.25e-26 ✓
+
+adf 11 d_export --ct --c --AIC
+adf 11 d_import --ct --c --AIC
+adf 11 d_investment --ct --c --AIC
+adf 11 d_consumption --ct --c --AIC
+adf 11 d_gdp --ct --c --AIC
+
+# --- 8. Static OLS model (baseline) ---
+# Variables: d_export ~ const + d_investment + d_consumption + d_gdp + d_import
+# Sample: 2000:2 - 2022:4  (N=91)
+#
+# Results (from report, Model 40):
+#   const:         -1.944,  p=0.691
+#   d_investment:  -1.013,  p≈0 ***   (large negative — likely multicollinearity)
+#   d_consumption: -1.045,  p≈0 ***
+#   d_gdp:          1.038,  p≈0 ***
+#   d_import:       0.994,  p≈0 ***
+#   R²=0.9996, F(4,86)=53362  ← inflated due to multicollinearity / near-identity
+
+smpl 2000:2 2022:4
+ols d_export const d_investment d_consumption d_gdp d_import
+
+# --- 9. White test for heteroskedasticity ---
+# H0: homoskedastic | H1: heteroskedastic
+# → FAILS here (not shown in report but motivated DL switch)
+modtest --white
+
+# --- 10. Summary ---
+# White test detects heteroskedasticity in static model
+# Solution: introduce lagged variables → see script 02_dl_model_final.inp

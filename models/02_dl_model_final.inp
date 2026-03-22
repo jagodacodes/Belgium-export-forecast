@@ -1,0 +1,128 @@
+# ==============================================================
+# SCRIPT 2 — Final Distributed Lag (DL) Model
+# Belgium Export Forecasting | SGH Warsaw School of Economics
+# ==============================================================
+# PURPOSE:
+#   - Resolve heteroskedasticity found in static OLS (script 01)
+#   - Estimate final DL model with lagged regressors:
+#       d_pkb_1     (GDP, lag 1)
+#       d_import_4  (imports, lag 4)
+#   - Full battery of diagnostic tests
+#   - Interpret key model parameters
+#   - Generate ex-post forecast for 2023–2024
+#   - Evaluate forecast accuracy (RMSE, MAPE, Theil U2)
+#
+# FINAL MODEL EQUATION:
+#   Δexport_t = 187.2
+#             + 0.374 * Δinvestment_t
+#             + 1.217 * Δconsumption_t
+#             + 0.645 * Δgdp_{t-1}
+#             − 0.250 * Δimport_{t-4}
+#             + ε_t
+# ==============================================================
+
+open belgium_quarterly_2000_2024.csv --csv
+
+# --- 1. Generate first differences ---
+series d_export      = diff(export)
+series d_import      = diff(import)
+series d_investment  = diff(investment)
+series d_consumption = diff(consumption)
+series d_gdp         = diff(gdp)
+
+# --- 2. Generate lagged variables ---
+series d_gdp_1    = d_gdp(-1)      # GDP growth, 1 quarter lag
+series d_import_4 = d_import(-4)   # Import growth, 4 quarter lag (seasonal)
+
+# --- 3. Estimate DL model ---
+# Sample: 2001:2 - 2022:4  (N=87, lost obs due to lags)
+#
+# Coefficient results (Model 38/41 from report):
+#   const:          187.175,  se=161.970,  t=1.156,   p=0.2512
+#   d_investment:     0.374,  se=0.196,    t=1.911,   p=0.0595  *
+#   d_consumption:    1.217,  se=0.135,    t=9.034,   p=6.15e-14 ***
+#   d_gdp_1:          0.645,  se=0.109,    t=5.918,   p=7.27e-08 ***
+#   d_import_4:      -0.250,  se=0.067,    t=-3.745,  p=0.0003   ***
+#
+# Model fit:
+#   R²=0.6443, Adj.R²=0.6270
+#   F(4,82)=37.13, p=1.08e-17
+#   DW=1.896
+
+smpl 2001:2 2022:4
+ols d_export const d_investment d_consumption d_gdp_1 d_import_4
+
+# --- 4. DIAGNOSTIC TESTS ---
+
+# (a) RESET test — functional form
+# H0: correct specification | H1: misspecified
+# Result: F(2,80)=0.229, p=0.796 → PASS ✓
+reset --squares --cubes
+
+# (b) Chow test — structural break
+# Break point: 2012:2 (identified from recursive residuals)
+# H0: stable parameters | H1: structural break
+# Result: F(5,77)=3.657, p=0.0051 → BREAK DETECTED ⚠
+chow 2012:2
+
+# (c) Jarque-Bera — normality of residuals
+# H0: residuals normal | H1: not normal
+# Result: Chi²(2)=32.898, p=7.18e-08 → NOT NORMAL ⚠
+# Implication: interpret t-statistics with caution
+normtest --jbera
+
+# (d) White test — heteroskedasticity
+# H0: homoskedastic | H1: heteroskedastic
+# Result: LM=13.569, p=P(Chi²(14)>13.57)=0.482 → PASS ✓
+# (heteroskedasticity successfully eliminated by adding lags)
+modtest --white
+
+# (e) Breusch-Godfrey LM — autocorrelation order 1
+# H0: no autocorrelation | H1: AR(1) autocorrelation
+# Result: LMF(1,81)=0.215, p=0.644 → PASS ✓
+modtest --autocorr 1
+
+# (f) Breusch-Godfrey LM — autocorrelation order 4
+# H0: no autocorrelation | H1: AR(4) autocorrelation
+# Result: LMF(4,78)=3.885, p=0.0063 → AUTOCORRELATION DETECTED ⚠
+# Implication: quarterly data shows seasonal autocorrelation pattern
+modtest --autocorr 4
+
+# --- 5. PARAMETER INTERPRETATION ---
+# d_investment (+0.374, p=0.059):
+#   A €1M increase in Δinvestment → Δexport increases by €0.37M
+#   Marginal significance — weak but present effect on export capacity
+
+# d_consumption (+1.217, p<0.001):
+#   A €1M increase in Δconsumption → Δexport increases by €1.22M
+#   Largest effect: Belgium's open economy means domestic demand
+#   growth spills into export production
+
+# d_gdp_1 (+0.645, p<0.001):
+#   A €1M increase in GDP growth last quarter → Δexport +€0.65M today
+#   1-quarter lag reflects production-to-export fulfillment delay
+
+# d_import_4 (−0.250, p=0.0003):
+#   A €1M increase in import growth 4 quarters ago → Δexport −€0.25M
+#   Reflects delayed substitution in global value chains
+
+# --- 6. EX-POST FORECAST: 2023 Q1 – 2024 Q4 ---
+# Re-estimate on extended sample including test period regressors
+smpl 2001:2 2024:4
+ols d_export const d_investment d_consumption d_gdp_1 d_import_4
+
+# Generate dynamic forecast for 2023:1–2024:4
+fcast 2023:1 2024:4 forecast_expost --dynamic
+
+# Forecast accuracy statistics (from report):
+#   ME    = -2665.8  (systematic underestimation)
+#   RMSE  =  3169.5  (avg error ~€3.2B/quarter)
+#   MAE   =  2774.3
+#   MPE   =  -507.3%
+#   MAPE  =   728.6% (poor relative accuracy)
+#   U2    =     2.08 (worse than naive historical mean)
+#   UM    =  0.7074  (bias dominates error decomposition)
+fcasterr
+
+# Plot forecast vs actual
+gnuplot d_export forecast_expost --time-series --with-lines --output=display

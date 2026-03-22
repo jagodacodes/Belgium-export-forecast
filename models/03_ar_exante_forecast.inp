@@ -1,0 +1,193 @@
+# ==============================================================
+# SCRIPT 3 — AR Sub-Models & Ex-Ante Forecast (2025–2026)
+# Belgium Export Forecasting | SGH Warsaw School of Economics
+# ==============================================================
+# PURPOSE:
+#   Since the DL model requires future values of its regressors,
+#   we build individual AR models for each explanatory variable,
+#   forecast them to 2026 Q4, then feed those projections into
+#   the DL model to obtain the final export forecast.
+#
+# PIPELINE:
+#   d_import      → AR(4) → import_fcast (2025–2026)
+#   d_gdp         → AR(1) → gdp_fcast    (2025–2026)
+#   d_investment  → AR(1) → inv_fcast    (2025–2026)
+#   d_consumption → AR(1) → cons_fcast   (2025–2026)
+#         ↓
+#   DL model (script 02) + forecasted regressors
+#         ↓
+#   d_export ex-ante forecast (2025–2026)
+# ==============================================================
+
+open belgium_quarterly_2000_2024.csv --csv
+
+# --- Generate first differences ---
+series d_export      = diff(export)
+series d_import      = diff(import)
+series d_investment  = diff(investment)
+series d_consumption = diff(consumption)
+series d_gdp         = diff(gdp)
+
+# ==============================================================
+# STEP 1: ACF / PACF analysis for lag selection
+# ==============================================================
+# Used to identify significant autocorrelation structure
+# and choose AR order for each variable
+
+corrgm d_import 20       # PACF lag 4: -0.2360** (seasonal annual cycle)
+corrgm d_gdp 20          # PACF lag 1: -0.2843*** (strong mean reversion)
+corrgm d_investment 20   # PACF lag 1: -0.1826*
+corrgm d_consumption 20  # PACF lag 1: -0.4333***
+corrgm d_export 20       # PACF lag 1:  0.1747*  (used in AR(1) export model)
+
+# ==============================================================
+# STEP 2: AR model for d_import → AR(4)
+# ==============================================================
+# Lag 4 chosen: PACF=-0.2360, ACF=-0.2207 (both significant at 5%)
+# Reflects strong seasonal pattern (annual cycle in trade data)
+#
+# Model results (Model 5 from report):
+#   const:       502.807, se=230.945, t=2.177, p=0.0320 **
+#   d_import_4: -0.223,   se=0.101,   t=-2.198, p=0.0304 **
+#   R²=0.049, Adj.R²=0.039
+#   DW=7.882 (no autocorrelation in residuals)
+
+smpl 2001:2 2024:4
+series d_import_4 = d_import(-4)
+ols d_import const d_import_4
+fcast 2025:1 2026:4 import_fcast --static
+gnuplot d_import import_fcast --time-series --with-lines --output=display
+
+# Forecast path: stabilizes near zero with moderate CI width
+# (typical for AR(4) on seasonal quarterly data)
+
+# ==============================================================
+# STEP 3: AR model for d_gdp → AR(1)
+# ==============================================================
+# Lag 1 chosen: PACF=-0.2843*** (significant at 1%)
+# All other lags insignificant
+#
+# Model results (Model 7 from report):
+#   const:    458.878, se=164.305, t=2.793, p=0.0063 ***
+#   d_gdp_1: -0.284,   se=0.098,   t=-2.906, p=0.0045 ***
+#   R²=0.081, Adj.R²=0.071
+#   DW stat: -1.304 (Durbin-Watson h used for AR models)
+
+smpl 2000:3 2024:4
+series d_gdp_1 = d_gdp(-1)
+ols d_gdp const d_gdp_1
+fcast 2025:1 2026:4 gdp_fcast --static
+gnuplot d_gdp gdp_fcast --time-series --with-lines --output=display
+
+# Forecast path: converges to stable trend ~350–400 €M/quarter
+# Consistent with historical average GDP growth rate for Belgium
+
+# ==============================================================
+# STEP 4: AR model for d_investment → AR(1)
+# ==============================================================
+# Lag 1 chosen: PACF=-0.1826* (significant at 10%)
+# Lags 7 and 14 also showed significance but not quarterly-appropriate
+#
+# Model results (Model 10 from report):
+#   const:           104.041, se=82.480,  t=1.261,  p=0.2102
+#   d_investment_1:  -0.183,  se=0.100,   t=-1.823, p=0.0715 *
+#   R²=0.033, Adj.R²=0.023
+#   Note: low R² is expected for differenced investment series
+
+smpl 2000:3 2024:4
+series d_inv_1 = d_investment(-1)
+ols d_investment const d_inv_1
+fcast 2025:1 2026:4 inv_fcast --static
+gnuplot d_investment inv_fcast --time-series --with-lines --output=display
+
+# Forecast path: mean-reverting, narrow CI
+# Consistent with stable investment dynamics in Belgium 2013–2024
+
+# ==============================================================
+# STEP 5: AR model for d_consumption → AR(1)
+# ==============================================================
+# Lag 1 chosen: PACF=-0.4333*** (highly significant)
+# Lag 2: PACF=-0.2522** also significant but AR(1) sufficient
+#
+# Model results (Model 11 from report):
+#   const:            359.006, se=128.174, t=2.801, p=0.0062 **
+#   d_consumption_1: -0.434,   se=0.092,   t=-4.713, p=8.24e-06 ***
+#   R²=0.188, Adj.R²=0.179
+#   DW: -2.642 (strong negative AR(1) — alternating pattern)
+
+smpl 2000:3 2024:4
+series d_cons_1 = d_consumption(-1)
+ols d_consumption const d_cons_1
+fcast 2025:1 2026:4 cons_fcast --static
+gnuplot d_consumption cons_fcast --time-series --with-lines --output=display
+
+# Forecast path: returns to mean, moderate CI
+# Strong negative AR(1) coefficient means alternating quarters
+
+# ==============================================================
+# STEP 6: AR model for d_export (standalone — for comparison)
+# ==============================================================
+# Lag 1 chosen: PACF=0.1747* (significant at 10%)
+# Lags 9, 10, 17 shown in PACF but not quarterly-justified
+#
+# Model results (Model 12 from report):
+#   const:      1624.85, se=1119.97, t=1.451, p=0.1501
+#   d_export_1:    0.984, se=0.015,  t=67.12, p=4.14e-83 ***
+#   R²=0.979 (high — export level is very persistent)
+#   Note: this is export LEVEL AR, not differenced
+
+smpl 2000:2 2024:4
+series export_1 = export(-1)
+ols export const export_1
+fcast 2025:1 2026:4 export_fcast_ar --static
+gnuplot export export_fcast_ar --time-series --with-lines --output=display
+
+# Ex-ante projection: ~93,000–94,000 €M/quarter through 2026
+# 95% CI widens: from ±2,238 (2025Q1) to ±5,989 (2026Q4)
+
+# ==============================================================
+# STEP 7: Final ex-ante DL model with forecasted regressors
+# ==============================================================
+# Feed AR forecasts into DL model to get causal export forecast
+# Uses forecasted values of d_consumption, d_gdp_1, d_import_4
+#
+# Model results (Model 7 — ex-ante version, from report):
+#   const:              340.366, p=0.600
+#   d_import_fcast_4:     0.149, p=0.842   (not significant)
+#   d_inv_fcast:          1.735, p=0.489   (not significant)
+#   d_cons_fcast:        -0.354, p=0.613   (not significant)
+#   d_gdp_fcast_1:        0.021, p=0.980   (not significant)
+#   R²=0.020 (low — regressors are flat AR forecasts, low variance)
+#
+# Note: low significance of forecasted regressors is expected
+# because AR(1) projections converge to means with little variation.
+# The forecast uncertainty is captured in the widening CI.
+
+smpl 2013:4 2024:4
+series d_import_fcast_4  = import_fcast(-4)
+series d_gdp_fcast_1     = gdp_fcast(-1)
+
+ols d_export const d_import_fcast_4 inv_fcast cons_fcast d_gdp_fcast_1
+fcast 2025:1 2026:4 export_fcast_dl --dynamic
+
+gnuplot d_export export_fcast_dl --time-series --with-lines --output=display
+
+# ==============================================================
+# INTERPRETATION SUMMARY
+# ==============================================================
+# Ex-ante forecast conclusion:
+#   - Export dynamics projected STABLE in 2025–2026
+#   - No strong upward or downward trend expected
+#   - 95% CI widens with horizon (naturing uncertainty)
+#   - Baseline: ~93,000–94,000 €M quarterly
+#
+# Limitations of this ex-ante approach:
+#   1. AR forecasts of regressors carry their own forecast error
+#      which propagates into the final export forecast
+#   2. Structural break (2012 Q2, Chow test) weakens parameter
+#      stability in the projected period
+#   3. No external variables (exchange rate, commodity prices,
+#      global demand indices) included — limits ability to
+#      capture international trade shocks
+#   4. Model does not account for potential policy changes
+#      or geopolitical shocks in 2025–2026
