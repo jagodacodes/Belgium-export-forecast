@@ -194,12 +194,3 @@ Explanatory variable forecasts generated via individual **AR(1)** models (lag se
 4. Run OLS → check White test → introduce lags → re-run full diagnostics
 5. Generate forecasts using `fcast` with `--dynamic` option
 
-Full methodology in [`report/Final_Ekonometria-Projekt-3.pdf`](report/Final_Ekonometria-Projekt-3.pdf)
-
----
-
-
-
----
-
-*Open to feedback — feel free to open an issue or reach out on LinkedIn.*
