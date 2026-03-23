@@ -198,16 +198,7 @@ Full methodology in [`report/Final_Ekonometria-Projekt-3.pdf`](report/Final_Ekon
 
 ---
 
-## Video Presentation
 
-*Coming soon — walkthrough of key findings and model diagnostics.*
-
----
-
-## Authors
-
-**Jagna Jezierska** · **Jagoda Leszczyńska**
-SGH Warsaw School of Economics — Econometrics I
 
 ---
 
